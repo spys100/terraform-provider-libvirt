@@ -201,7 +201,7 @@ func domainGetIfacesInfo(virConn *libvirt.Libvirt, domain libvirt.Domain, rd *sc
 	return interfaces, nil
 }
 
-func newDiskForCloudInit(virConn *libvirt.Libvirt, volumeKey string) (libvirtxml.DomainDisk, error) {
+func newDiskForCloudInit(virConn *libvirt.Libvirt, volumeKey string, bus string) (libvirtxml.DomainDisk, error) {
 	disk := libvirtxml.DomainDisk{
 		// HACK mark the disk as belonging to the cloudinit
 		// resource so we can ignore it
@@ -210,7 +210,7 @@ func newDiskForCloudInit(virConn *libvirt.Libvirt, volumeKey string) (libvirtxml
 		Target: &libvirtxml.DomainDiskTarget{
 			// Last device letter possible with a single IDE controller on i440FX
 			Dev: "hdd",
-			Bus: "ide",
+			Bus: bus,
 		},
 		Driver: &libvirtxml.DomainDiskDriver{
 			Name: "qemu",
@@ -575,9 +575,13 @@ func setDisks(d *schema.ResourceData, domainDef *libvirtxml.Domain, virConn *lib
 
 			if strings.HasSuffix(url.Path, ".iso") {
 				disk.Device = "cdrom"
+				bus := "ide"
+				if strings.Contains(domainDef.OS.Type.Machine, "q35") {
+					bus = "sata"
+				}
 				disk.Target = &libvirtxml.DomainDiskTarget{
 					Dev: fmt.Sprintf("hd%s", diskLetterForIndex(numOfISOs)),
-					Bus: "ide",
+					Bus: bus,
 				}
 				disk.Driver = &libvirtxml.DomainDiskDriver{
 					Name: "qemu",
@@ -598,9 +602,13 @@ func setDisks(d *schema.ResourceData, domainDef *libvirtxml.Domain, virConn *lib
 
 			if strings.HasSuffix(file.(string), ".iso") {
 				disk.Device = "cdrom"
+				bus := "ide"
+				if strings.Contains(domainDef.OS.Type.Machine, "q35") {
+					bus = "sata"
+				}
 				disk.Target = &libvirtxml.DomainDiskTarget{
 					Dev: fmt.Sprintf("hd%s", diskLetterForIndex(numOfISOs)),
-					Bus: "ide",
+					Bus: bus,
 				}
 				disk.Driver = &libvirtxml.DomainDiskDriver{
 					Name: "qemu",
@@ -676,11 +684,15 @@ func setFilesystems(d *schema.ResourceData, domainDef *libvirtxml.Domain) error 
 
 func setCloudinit(d *schema.ResourceData, domainDef *libvirtxml.Domain, virConn *libvirt.Libvirt) error {
 	if cloudinit, ok := d.GetOk("cloudinit"); ok {
+		bus := "ide"
+		if strings.Contains(domainDef.OS.Type.Machine, "q35") {
+			bus = "sata"
+		}
 		cloudinitID, err := getCloudInitVolumeKeyFromTerraformID(cloudinit.(string))
 		if err != nil {
 			return err
 		}
-		disk, err := newDiskForCloudInit(virConn, cloudinitID)
+		disk, err := newDiskForCloudInit(virConn, cloudinitID, bus)
 		if err != nil {
 			return err
 		}

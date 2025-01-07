@@ -686,12 +686,16 @@ func resourceLibvirtDomainUpdate(ctx context.Context, d *schema.ResourceData, me
 	}
 
 	if d.HasChange("cloudinit") {
+		bus := "ide"
+		if strings.Contains(d.Get("machine").(string), "q35") {
+			bus = "sata"
+		}
 		cloudinitID, err := getCloudInitVolumeKeyFromTerraformID(d.Get("cloudinit").(string))
 		if err != nil {
 			return diag.FromErr(err)
 		}
 
-		disk, err := newDiskForCloudInit(virConn, cloudinitID)
+		disk, err := newDiskForCloudInit(virConn, cloudinitID, bus)
 		if err != nil {
 			return diag.FromErr(err)
 		}

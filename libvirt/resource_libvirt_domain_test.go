@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	testhelper "github.com/dmacvicar/terraform-provider-libvirt/libvirt/helper/test"
@@ -421,6 +422,91 @@ func TestAccLibvirtDomain_URLDisk(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckLibvirtDomainExists("libvirt_domain."+randomDomainName, &domain),
 					testAccCheckLibvirtURLDisk(url, &domain),
+				),
+			},
+		},
+	})
+}
+
+func TestAccLibvirtDomain_MultiISODisks_q35(t *testing.T) {
+	var domain libvirt.Domain
+	randomDomainName := acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	randomPoolName := acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	randomPoolPath := "/tmp/terraform-provider-libvirt-pool-" + randomPoolName
+
+	isoPath, err := filepath.Abs("testdata/tcl.iso")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	configFourDisks := fmt.Sprintf(`
+	resource "libvirt_domain" "%s" {
+		name = "%s"
+		disk {
+			file = "%s"
+		}
+		disk {
+			file = "%s"
+		}
+		disk {
+			file = "%s"
+		}
+		disk {
+			file = "%s"
+		}
+	}`, randomDomainName, randomDomainName, isoPath, isoPath, isoPath, isoPath)
+
+	configWithCloudInit := fmt.Sprintf(`
+    resource "libvirt_pool" "%s" {
+        name = "%s"
+        type = "dir"
+        path = "%s"
+    }
+
+	resource "libvirt_cloudinit_disk" "%s" {
+		name      = "%s"
+		user_data = "#cloud-config"
+        pool      = "${libvirt_pool.%s.name}"
+	}
+
+	resource "libvirt_domain" "%s" {
+		name    = "%s"
+		machine = "q35"
+		cloudinit = "${libvirt_cloudinit_disk.%s.id}"
+		disk {
+			file = "%s"
+		}
+		disk {
+			file = "%s"
+		}
+		disk {
+			file = "%s"
+		}
+	}`, randomPoolName, randomPoolName, randomPoolPath, randomDomainName, randomDomainName, randomPoolName, randomDomainName, randomDomainName, randomDomainName, isoPath, isoPath, isoPath)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckLibvirtDomainDestroy,
+		ErrorCheck: func(err error) error {
+			if strings.Contains(err.Error(), "Cannot find machine type") {
+				t.Skipf("Skipped because machine type 'q35' not available")
+			}
+			return err
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: configFourDisks,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckLibvirtDomainExists("libvirt_domain."+randomDomainName, &domain),
+					testAccCheckLibvirtMultiISODisks(&domain),
+				),
+			},
+			{
+				Config: configWithCloudInit,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckLibvirtDomainExists("libvirt_domain."+randomDomainName, &domain),
+					testAccCheckLibvirtMultiISODisks(&domain),
 				),
 			},
 		},
